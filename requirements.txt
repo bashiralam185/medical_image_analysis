@@ -1,0 +1,25 @@
+# ── Streamlit app ─────────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Core DICOM & medical imaging ──────────────────────────────
+pydicom>=2.4.0
+numpy>=1.24.0
+scipy>=1.10.0
+SimpleITK>=2.3.0
+
+# ── Visualisation & animation ─────────────────────────────────
+matplotlib>=3.7.0
+imageio>=2.31.0
+imageio[ffmpeg]
+Pillow>=10.0.0
+scikit-image>=0.21.0
+
+# ── General utilities ─────────────────────────────────────────
+tqdm>=4.65.0
+pandas>=2.0.0
+
+# ── SAM2 / MedSAM2 (optional, for AI segmentation) ───────────
+# Install manually when you have a checkpoint:
+#   pip install git+https://github.com/facebookresearch/sam2.git
+# torch>=2.0.0
+# torchvision>=0.15.0

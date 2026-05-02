@@ -14,21 +14,14 @@ import streamlit as st
 warnings.filterwarnings("ignore")
 
 # ── Project paths ─────────────────────────────────────────────────────────────
-# data/ directories still work for local runs; uploads bypass them entirely
 DATA_DIR    = Path("data")
 PET_DIR     = DATA_DIR / "pet"
 MRI_DIR     = DATA_DIR / "mri"
 OUTPUTS_DIR = Path("outputs")
 CACHE_DIR   = OUTPUTS_DIR / ".cache"
 
-for d in [OUTPUTS_DIR, CACHE_DIR]:
+for d in [PET_DIR, MRI_DIR, OUTPUTS_DIR, CACHE_DIR]:
     d.mkdir(parents=True, exist_ok=True)
-# data dirs only created locally — don't fail on read-only cloud filesystems
-try:
-    PET_DIR.mkdir(parents=True, exist_ok=True)
-    MRI_DIR.mkdir(parents=True, exist_ok=True)
-except OSError:
-    pass
 
 # ── Session state keys ────────────────────────────────────────────────────────
 KEYS = {

@@ -82,16 +82,11 @@ pet_project/
 │   ├── segmentation.py
 │   └── analysis.py
 ├── data/
-│   ├── pet/                ← ★ PUT YOUR PET .dcm FILES HERE ★
+│   ├── pet/                ← ★ PET .dcm FILES HERE ★
 │   │   └── *.dcm
-│   └── mri/                ← ★ PUT YOUR MRI .dcm FILES HERE ★
+│   └── mri/                ← ★ MRI .dcm FILES HERE ★
 │       └── *.dcm
 ├── outputs/
-│   └── .cache/             ← Auto-generated cache (delete to reset)
-├── 01_dicom_loading.py     ← Standalone scripts (optional)
-├── 02_coregistration.py
-├── 03_segmentation.py
+│   └── .cache/             ← Auto-generated cache )
 └── requirements.txt
     """, language="")
-
-    st.info("💡 **Tip**: The app auto-restores previously computed results from `outputs/.cache/` on each reload — you don't need to reprocess every time.")

@@ -137,11 +137,11 @@ def render():
     utils.sidebar_status()
 
     st.title("📂 Load DICOM Data")
-    st.markdown(
-        "<p style='color:#5a7080;'>Parse and cache PET and MRI DICOM studies. "
-        "Files must be placed in the <code>data/</code> subdirectories.</p>",
-        unsafe_allow_html=True,
-    )
+    # st.markdown(
+    #     "<p style='color:#5a7080;'>Parse and cache PET and MRI DICOM studies. "
+    #     "Files must be placed in the <code>data/</code> subdirectories.</p>",
+    #     unsafe_allow_html=True,
+    # )
 
     # ── Data location info ────────────────────────────────────
     st.markdown("### 📁 Where to put your files")

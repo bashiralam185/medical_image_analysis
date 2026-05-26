@@ -29,7 +29,7 @@ def render():
         ready = sum([has("pet_4d"), has("mri_vol"), has("pet_coreg"), has("tumor_mask")])
         st.metric("Steps Ready", f"{ready}/4", "")
     with col4:
-        st.metric("AI Model", "SAM2 / MedSAM2", "semi-automatic")
+        st.metric("AI Model", "MONAI")
 
     st.markdown("---")
 

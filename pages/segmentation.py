@@ -237,11 +237,11 @@ def render():
     utils.sidebar_status()
 
     st.title("🎯 Tumour Segmentation")
-    st.markdown(
-        "<p style='color:#5a7080;'>Semi-automatic 3D tumour segmentation using "
-        "AI-assisted geodesic segmentation (MONAI), SAM2, or classical region-growing.</p>",
-        unsafe_allow_html=True,
-    )
+    # st.markdown(
+    #     "<p style='color:#5a7080;'>Semi-automatic 3D tumour segmentation using "
+    #     "AI-assisted geodesic segmentation (MONAI), SAM2, or classical region-growing.</p>",
+    #     unsafe_allow_html=True,
+    # )
 
     if not utils.has("mri_vol"):
         st.warning("⚠️ Load MRI data first (📂 Load DICOM).")

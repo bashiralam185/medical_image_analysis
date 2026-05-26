@@ -13,16 +13,55 @@ import utils
 warnings.filterwarnings("ignore")
 
 
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mutual Information computation (same metric used by SimpleITK coregistration)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def compute_mi(vol_a, vol_b, bins=64):
+    """
+    Compute Normalised Mutual Information between two 3D volumes.
+    NMI = (H(A) + H(B)) / H(A,B)  — range [1, 2], higher = better alignment.
+    Also returns standard MI = H(A) + H(B) - H(A,B).
+    Both volumes are flattened and must have the same shape.
+    """
+    assert vol_a.shape == vol_b.shape, "Volumes must have the same shape"
+    a = vol_a.flatten().astype(np.float64)
+    b = vol_b.flatten().astype(np.float64)
+
+    # Normalise to [0, 1] for histogram stability
+    a = (a - a.min()) / (a.max() - a.min() + 1e-10)
+    b = (b - b.min()) / (b.max() - b.min() + 1e-10)
+
+    # Joint histogram
+    hist_2d, _, _ = np.histogram2d(a, b, bins=bins)
+    hist_2d = hist_2d / hist_2d.sum()   # normalise to joint PDF
+
+    # Marginal histograms
+    p_a = hist_2d.sum(axis=1)
+    p_b = hist_2d.sum(axis=0)
+
+    # Entropies (ignore zero bins)
+    h_a  = -np.sum(p_a[p_a > 0] * np.log2(p_a[p_a > 0]))
+    h_b  = -np.sum(p_b[p_b > 0] * np.log2(p_b[p_b > 0]))
+    h_ab = -np.sum(hist_2d[hist_2d > 0] * np.log2(hist_2d[hist_2d > 0]))
+
+    mi  = h_a + h_b - h_ab
+    nmi = (h_a + h_b) / (h_ab + 1e-10)   # Normalised MI
+    return {"MI": round(mi, 4), "NMI": round(nmi, 4),
+            "H_A": round(h_a, 4), "H_B": round(h_b, 4), "H_AB": round(h_ab, 4)}
+
 def render():
     utils.try_restore_from_cache()
     utils.sidebar_status()
 
     st.title("📊 Analysis Dashboard")
-    st.markdown(
-        "<p style='color:#5a7080;'>Quantitative metrics, time-activity curves, "
-        "intensity histograms, and 3D visualisations — all in one place.</p>",
-        unsafe_allow_html=True,
-    )
+    # st.markdown(
+    #     "<p style='color:#5a7080;'>Quantitative metrics, time-activity curves, "
+    #     "intensity histograms, and 3D visualisations — all in one place.</p>",
+    #     unsafe_allow_html=True,
+    # )
 
     has_pet  = utils.has("pet_4d")
     has_mri  = utils.has("mri_vol")
@@ -36,6 +75,7 @@ def render():
     tabs = st.tabs([
         "⏱️ Time-Activity Curve",
         "📈 Intensity Histograms",
+        "🔗 Coregistration Quality",
         "🗺️ Multi-modal Overview",
         "🧊 3D Surface",
         "📋 Summary Report",
@@ -134,7 +174,198 @@ def render():
                             "TAC from mask skipped.")
 
     # ══════════════════════════════════════════════════════════
-    # TAB 2 — Histograms
+    # TAB 3 — Coregistration quality (NEW — inserted before old tab 2)
+    # ══════════════════════════════════════════════════════════
+    with tabs[2]:
+        st.markdown("### Coregistration Quality Assessment")
+        st.markdown(
+            "Mutual Information (MI) measures how statistically dependent the two images are. "
+            "A higher MI after registration vs. before means the alignment improved."
+        )
+
+        if not has_mri or not has_pet:
+            st.info("Load both PET and MRI first.")
+        else:
+            mri_vol  = utils.ensure_3d(utils.get("mri_vol"))
+            pet_avg  = utils.ensure_3d(utils.get("pet_avg"))
+            pet_coreg= utils.ensure_3d(utils.get("pet_coreg")) if has_coreg else None
+
+            # ── Resample PET avg to MRI space for fair before/after comparison ──
+            # Before: crop/pad PET to MRI shape naively (no registration)
+            def match_shape(src, ref_shape):
+                """Crop or zero-pad src to match ref_shape."""
+                out = np.zeros(ref_shape, dtype=src.dtype)
+                slices_src = tuple(slice(0, min(s, r)) for s, r in zip(src.shape, ref_shape))
+                slices_out = tuple(slice(0, min(s, r)) for s, r in zip(src.shape, ref_shape))
+                out[slices_out] = src[slices_src]
+                return out
+
+            mri_shape = mri_vol.shape
+
+            col1, col2 = st.columns(2)
+
+            # ── Before registration ───────────────────────────────────────────
+            with col1:
+                st.markdown("#### Before registration")
+                st.markdown(
+                    "<div style='font-size:0.8rem; color:#5a7080;'>"
+                    "PET average naively placed in MRI space (no alignment)</div>",
+                    unsafe_allow_html=True
+                )
+                if st.button("Compute MI (before)", key="btn_mi_before"):
+                    with st.spinner("Computing…"):
+                        pet_unregistered = match_shape(pet_avg, mri_shape)
+                        metrics_before = compute_mi(mri_vol, pet_unregistered)
+                        st.session_state["mi_before_result"] = metrics_before
+
+                if "mi_before_result" in st.session_state and isinstance(st.session_state["mi_before_result"], dict):
+                    m = st.session_state["mi_before_result"]
+                    st.metric("Mutual Information", m["MI"])
+                    st.metric("Normalised MI (NMI)", m["NMI"])
+                    with st.expander("Entropy breakdown"):
+                        st.write(f"H(MRI) = {m['H_A']} bits")
+                        st.write(f"H(PET) = {m['H_B']} bits")
+                        st.write(f"H(MRI,PET) joint = {m['H_AB']} bits")
+
+            # ── After registration ────────────────────────────────────────────
+            with col2:
+                st.markdown("#### After registration")
+                st.markdown(
+                    "<div style='font-size:0.8rem; color:#5a7080;'>"
+                    "Co-registered PET resampled into MRI space</div>",
+                    unsafe_allow_html=True
+                )
+                if not has_coreg:
+                    st.info("Run coregistration first.")
+                else:
+                    if st.button("Compute MI (after)", key="btn_mi_after"):
+                        with st.spinner("Computing…"):
+                            metrics_after = compute_mi(mri_vol, pet_coreg)
+                            st.session_state["mi_after_result"] = metrics_after
+
+                    if "mi_after_result" in st.session_state and isinstance(st.session_state["mi_after_result"], dict):
+                        m = st.session_state["mi_after_result"]
+                        st.metric("Mutual Information", m["MI"])
+                        st.metric("Normalised MI (NMI)", m["NMI"])
+                        with st.expander("Entropy breakdown"):
+                            st.write(f"H(MRI) = {m['H_A']} bits")
+                            st.write(f"H(PET) = {m['H_B']} bits")
+                            st.write(f"H(MRI,PET) joint = {m['H_AB']} bits")
+
+            # ── Improvement summary ───────────────────────────────────────────
+            if ("mi_before_result" in st.session_state and
+                    "mi_after_result" in st.session_state and
+                    isinstance(st.session_state["mi_before_result"], dict) and
+                    isinstance(st.session_state["mi_after_result"], dict)):
+                st.markdown("---")
+                st.markdown("#### Improvement")
+                mb = st.session_state["mi_before_result"]
+                ma = st.session_state["mi_after_result"]
+                mi_gain  = round(ma["MI"]  - mb["MI"],  4)
+                nmi_gain = round(ma["NMI"] - mb["NMI"], 4)
+                pct_gain = round((mi_gain / (mb["MI"] + 1e-10)) * 100, 1)
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("MI gain",     f"+{mi_gain}",  delta=str(mi_gain))
+                c2.metric("NMI gain",    f"+{nmi_gain}", delta=str(nmi_gain))
+                c3.metric("Improvement", f"{pct_gain}%",
+                          delta=f"{pct_gain}% better" if pct_gain > 0 else "no improvement")
+
+                # Bar chart comparison
+                fig, axes = plt.subplots(1, 2, figsize=(10, 3.5))
+                fig.patch.set_facecolor(utils.DARK_BG)
+                for ax in axes:
+                    ax.set_facecolor(utils.PANEL)
+                    ax.tick_params(colors="#5a7080")
+                    for sp in ax.spines.values():
+                        sp.set_edgecolor("#1e2d42")
+
+                # MI comparison
+                axes[0].bar(["Before", "After"],
+                            [mb["MI"], ma["MI"]],
+                            color=["#ff6b35", "#00e5a0"],
+                            width=0.5, alpha=0.85)
+                axes[0].set_title("Mutual Information", color="#c8d8e8", fontsize=10)
+                axes[0].set_ylabel("MI (bits)", color="#5a7080")
+
+                # NMI comparison
+                axes[1].bar(["Before", "After"],
+                            [mb["NMI"], ma["NMI"]],
+                            color=["#ff6b35", "#00e5a0"],
+                            width=0.5, alpha=0.85)
+                axes[1].set_title("Normalised MI", color="#c8d8e8", fontsize=10)
+                axes[1].set_ylabel("NMI", color="#5a7080")
+                axes[1].set_ylim(0, 2)
+
+                plt.tight_layout()
+                st.pyplot(fig, use_container_width=True)
+                plt.close()
+
+                # Interpretation guide
+                good = mi_gain > 0
+                color = "#00e5a0" if good else "#ff6b35"
+                msg   = (f"MI increased by {mi_gain:.4f} bits ({pct_gain}%) — "
+                         "the registration improved alignment."
+                         if good else
+                         "MI did not improve — check alignment visually and consider re-running.")
+                st.markdown(
+                    f"<div style='background:#0e1520; border-left:3px solid {color}; "
+                    f"padding:10px 14px; border-radius:4px; font-size:0.82rem; color:#c8d8e8;'>"
+                    f"{msg}</div>",
+                    unsafe_allow_html=True
+                )
+
+            # ── Joint histogram (visual MI check) ────────────────────────────
+            st.markdown("---")
+            st.markdown("#### Joint intensity histogram")
+            st.markdown(
+                "A well-registered pair shows tight, well-defined clusters in the joint histogram. "
+                "A misaligned pair shows a diffuse, scattered pattern."
+            )
+            show_joint = st.selectbox(
+                "Show joint histogram for:",
+                ["Before registration (unaligned)", "After registration (co-registered)"]
+                if has_coreg else ["Before registration (unaligned)"],
+                key="joint_hist_sel"
+            )
+
+            if st.button("Generate joint histogram", key="gen_joint"):
+                mri_flat = mri_vol.flatten().astype(np.float64)
+                if "After" in show_joint and pet_coreg is not None:
+                    pet_flat = pet_coreg.flatten().astype(np.float64)
+                    title = "Joint histogram — After registration"
+                else:
+                    pet_flat = match_shape(pet_avg, mri_shape).flatten().astype(np.float64)
+                    title = "Joint histogram — Before registration"
+
+                # Percentile clip for cleaner vis
+                mri_lo, mri_hi = np.percentile(mri_flat, 1), np.percentile(mri_flat, 99)
+                pet_lo, pet_hi = np.percentile(pet_flat, 1), np.percentile(pet_flat, 99)
+                mri_flat = np.clip(mri_flat, mri_lo, mri_hi)
+                pet_flat = np.clip(pet_flat, pet_lo, pet_hi)
+
+                hist_2d, xedges, yedges = np.histogram2d(mri_flat, pet_flat, bins=64)
+                hist_2d = np.log1p(hist_2d)   # log scale for visibility
+
+                fig2, ax2 = plt.subplots(figsize=(6, 5))
+                fig2.patch.set_facecolor(utils.DARK_BG)
+                ax2.set_facecolor(utils.PANEL)
+                im = ax2.imshow(hist_2d.T, origin="lower", aspect="auto",
+                                cmap="hot",
+                                extent=[xedges[0], xedges[-1], yedges[0], yedges[-1]])
+                ax2.set_xlabel("MRI intensity", color="#5a7080")
+                ax2.set_ylabel("PET intensity", color="#5a7080")
+                ax2.set_title(title, color="#c8d8e8", fontsize=10)
+                ax2.tick_params(colors="#5a7080")
+                for sp in ax2.spines.values():
+                    sp.set_edgecolor("#1e2d42")
+                plt.colorbar(im, ax=ax2, label="log(count)")
+                plt.tight_layout()
+                st.pyplot(fig2, use_container_width=True)
+                plt.close()
+
+    # ══════════════════════════════════════════════════════════
+    # TAB 2 — Histograms (renumbered to tabs[1])
     # ══════════════════════════════════════════════════════════
     with tabs[1]:
         st.markdown("### Intensity Histograms")
@@ -199,7 +430,7 @@ def render():
     # ══════════════════════════════════════════════════════════
     # TAB 3 — Multi-modal overview
     # ══════════════════════════════════════════════════════════
-    with tabs[2]:
+    with tabs[3]:
         st.markdown("### Multi-modal overview")
         if not (has_mri and has_pet):
             st.info("Load both PET and MRI to see the overlay.")
@@ -249,7 +480,7 @@ def render():
     # ══════════════════════════════════════════════════════════
     # TAB 4 — 3D Surface
     # ══════════════════════════════════════════════════════════
-    with tabs[3]:
+    with tabs[4]:
         st.markdown("### 3D Surface Render")
         if not has_seg:
             st.info("Run segmentation first to see the 3D tumour surface.")
@@ -286,7 +517,7 @@ def render():
     # ══════════════════════════════════════════════════════════
     # TAB 5 — Summary report
     # ══════════════════════════════════════════════════════════
-    with tabs[4]:
+    with tabs[5]:
         st.markdown("### Summary Report")
 
         report_lines = ["# PET/MRI Analysis Report\n"]

@@ -148,7 +148,8 @@ with st.sidebar:
          "🖼️  PET Viewer",
          "🔗  Coregistration",
          "🎯  Segmentation",
-         "📊  Analysis Dashboard"],
+         "📊  Analysis Dashboard",
+         "💡  How It Works"],
         label_visibility="collapsed",
     )
 
@@ -172,5 +173,6 @@ elif "PET Viewer"      in page: import pages.pet_viewer      as _p
 elif "Coregistration"  in page: import pages.coregistration  as _p
 elif "Segmentation"    in page: import pages.segmentation    as _p
 elif "Analysis"        in page: import pages.analysis        as _p
+elif "How It Works"    in page: import pages.explain         as _p
 
 _p.render()
